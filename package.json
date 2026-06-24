@@ -1,0 +1,54 @@
+{
+  "name": "@openvcs/lore",
+  "version": "0.1.0",
+  "description": "Lore VCS backend plugin for OpenVCS",
+  "author": "OpenVCS Contributors",
+  "license": "GPL-3.0-or-later",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "openvcs": {
+    "id": "openvcs.lore",
+    "name": "Lore",
+    "default_enabled": true,
+    "module": {
+      "exec": "openvcs-lore-plugin.js",
+      "vcs_backends": [
+        {
+          "id": "lore",
+          "name": "Lore",
+          "action_labels": {
+            "VCS.Commit": "Commit",
+            "VCS.Sync": "Sync",
+            "VCS.Push": "Push"
+          }
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "lint": "tsc -p tsconfig.json --noEmit",
+    "test": "tsx --test test/*.test.ts",
+    "coverage": "c8 --include src --exclude 'src/plugin-types.ts' --reporter text --reporter lcov --all --check-coverage --lines 100 --functions 100 --branches 100 --statements 100 --per-file tsx --test test/*.test.ts",
+    "prepack": "npm run build",
+    "build:plugin": "tsc -p tsconfig.json",
+    "build": "node ./node_modules/@openvcs/sdk/bin/openvcs.js build"
+  },
+  "dependencies": {
+    "@openvcs/sdk": "edge"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.0",
+    "c8": "^11.0.0",
+    "tsx": "^4.20.6",
+    "typescript": "^6.0.2"
+  },
+  "files": [
+    "bin/",
+    "src/",
+    "tsconfig.json",
+    "README.md",
+    "LICENSE"
+  ]
+}
