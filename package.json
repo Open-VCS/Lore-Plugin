@@ -36,6 +36,7 @@
     "build": "node ./node_modules/@openvcs/sdk/bin/openvcs.js build"
   },
   "dependencies": {
+    "@lore-vcs/sdk": "^0.8.3",
     "@openvcs/sdk": "edge"
   },
   "devDependencies": {
