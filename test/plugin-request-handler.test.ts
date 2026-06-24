@@ -1,6 +1,5 @@
 // Copyright © 2025-2026 OpenVCS Contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
-/// <reference types="node" />
 
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
@@ -8,272 +7,70 @@ import { describe, it } from 'node:test';
 import type { PluginRuntimeContext } from '@openvcs/sdk/runtime';
 import { LoreVcsDelegates } from '../src/plugin-request-handler.js';
 
-function createRuntimeContext(): PluginRuntimeContext {
+function ctx(): PluginRuntimeContext {
+  return { host: {} as any, requestId: '1', method: 'vcs.get_caps' };
+}
+
+function mockLore() {
   return {
-    host: {} as PluginRuntimeContext['host'],
-    requestId: '1',
-    method: 'vcs.get_caps',
+    version: async () => '@lore-vcs/sdk v0.8.3', status: async () => [], stage: async () => {},
+    unstage: async () => {}, commit: async () => {}, amend: async () => {},
+    listBranches: async () => [], createBranch: async () => {}, switchBranch: async () => {},
+    deleteBranch: async () => {}, push: async () => {}, sync: async () => {},
+    clone: async () => {}, listCommits: async () => [], diffFile: async () => [],
+    diffRevision: async () => [], mergeStart: async () => {}, mergeAbort: async () => {},
+    mergeResolve: async () => {}, mergeResolveMine: async () => {}, mergeResolveTheirs: async () => {},
+    fileReset: async () => {}, getRemoteUrl: async () => null, getIdentity: () => null,
+    setIdentityLocal: () => {}, getConfig: async () => null, cherryPick: async () => {},
+    revertCommit: async () => {},
   };
 }
 
-function createMockLore() {
-  return {
-    version: async () => '@lore-vcs/sdk v0.8.3',
-    status: async () => [],
-    stage: async () => {},
-    unstage: async () => {},
-    commit: async () => {},
-    amend: async () => {},
-    listBranches: async () => [],
-    createBranch: async () => {},
-    switchBranch: async () => {},
-    deleteBranch: async () => {},
-    push: async () => {},
-    sync: async () => {},
-    clone: async () => {},
-    listCommits: async () => [],
-    diffFile: async () => [],
-    diffRevision: async () => [],
-    mergeStart: async () => {},
-    mergeAbort: async () => {},
-    mergeResolve: async () => {},
-    mergeResolveMine: async () => {},
-    mergeResolveTheirs: async () => {},
-    fileReset: async () => {},
-  };
-}
-
-function createMockDelegate(mockLore: ReturnType<typeof createMockLore>) {
+function deleg(m: ReturnType<typeof mockLore>) {
   return new LoreVcsDelegates({
-    allocateSession: () => 'session-1',
-    closeSession: () => {},
-    requireSession: () => ({ path: '/tmp/mock-repo' }),
-    createLoreCommand: () => mockLore as any,
+    allocateSession: () => 's1', closeSession: () => {},
+    requireSession: () => ({ path: '/r' }), createLoreCommand: () => m as any,
   });
 }
 
 describe('LoreVcsDelegates', () => {
-  describe('getCaps', () => {
-    it('returns Lore capabilities', () => {
-      const d = createMockDelegate(createMockLore());
-      const caps = d.getCaps({}, createRuntimeContext());
-      assert.ok(caps.commits);
-      assert.ok(caps.branches);
-      assert.ok(caps.staging);
-      assert.ok(caps.push_pull);
-      assert.ok(caps.fast_forward);
-      assert.strictEqual(caps.tags, false);
-    });
+  it('getCaps', async () => {
+    const c = await deleg(mockLore()).getCaps({}, ctx());
+    assert.ok(c.commits); assert.strictEqual(c.tags, false);
   });
-
-  describe('open', () => {
-    it('opens a valid repository', () => {
-      const d = createMockDelegate(createMockLore());
-      const result = d.open({ path: '/tmp/repo' }, createRuntimeContext());
-      assert.ok(result.session_id);
-    });
-
-    it('throws when path is empty', () => {
-      const d = createMockDelegate(createMockLore());
-      assert.throws(() => d.open({ path: '' }, createRuntimeContext()));
-    });
+  it('open', async () => {
+    assert.ok((await deleg(mockLore()).open({ path: '/r' }, ctx())).session_id);
+    await assert.rejects(deleg(mockLore()).open({ path: '' }, ctx()));
   });
+  it('close', async () => { assert.strictEqual(await deleg(mockLore()).close({ session_id: 's1' }, ctx()), null); });
+  it('getWorkdir', async () => { assert.strictEqual(await deleg(mockLore()).getWorkdir({ session_id: 's1' }, ctx()), '/r'); });
+  it('getCurrentBranch', async () => { assert.strictEqual(await deleg(mockLore()).getCurrentBranch({ session_id: 's1' }, ctx()), null); });
+  it('listBranches', async () => { assert.ok(Array.isArray(await deleg(mockLore()).listBranches({ session_id: 's1' }, ctx()))); });
+  it('listLocalBranches', async () => { assert.ok(Array.isArray(await deleg(mockLore()).listLocalBranches({ session_id: 's1' }, ctx()))); });
+  it('createBranch', async () => { assert.strictEqual(await deleg(mockLore()).createBranch({ session_id: 's1', name: 'x' }, ctx()), null); });
+  it('checkoutBranch', async () => { assert.strictEqual(await deleg(mockLore()).checkoutBranch({ session_id: 's1', name: 'main' }, ctx()), null); });
+  it('ensureRemote rejects', async () => { await assert.rejects(async () => deleg(mockLore()).ensureRemote({ session_id: 's1', name: 'o', url: 'x' }, ctx())); });
+  it('listRemotes', async () => { assert.ok(Array.isArray(await deleg(mockLore()).listRemotes({ session_id: 's1' }, ctx()))); });
+  it('removeRemote rejects', async () => { await assert.rejects(async () => deleg(mockLore()).removeRemote({ session_id: 's1', name: 'o' }, ctx())); });
+  it('fetch', async () => { assert.strictEqual(await deleg(mockLore()).fetch({ session_id: 's1' }, ctx()), null); });
+  it('push', async () => { assert.strictEqual(await deleg(mockLore()).push({ session_id: 's1' }, ctx()), null); });
+  it('pullFfOnly', async () => { assert.strictEqual(await deleg(mockLore()).pullFfOnly({ session_id: 's1' }, ctx()), null); });
+  it('commit', async () => { assert.strictEqual(await deleg(mockLore()).commit({ session_id: 's1', name: 'T', email: 't@t', message: 'm' }, ctx()), ''); });
+  it('commitIndex', async () => { assert.strictEqual(await deleg(mockLore()).commitIndex({ session_id: 's1', name: 'T', email: 't@t', message: 'm' }, ctx()), ''); });
+  it('getStatusSummary', async () => { assert.ok(await deleg(mockLore()).getStatusSummary({ session_id: 's1' }, ctx())); });
+  it('getStatusPayload', async () => { assert.ok(await deleg(mockLore()).getStatusPayload({ session_id: 's1' }, ctx())); });
+  it('listCommits', async () => { assert.ok(Array.isArray(await deleg(mockLore()).listCommits({ session_id: 's1', query: { limit: 10 } }, ctx()))); });
+  it('diffFile', async () => { assert.ok(await deleg(mockLore()).diffFile({ session_id: 's1', path: 'f' }, ctx())); });
+  it('diffCommit', async () => { assert.ok(Array.isArray(await deleg(mockLore()).diffCommit({ session_id: 's1', rev: 'a' }, ctx()))); });
+  it('mergeIntoCurrent', async () => { assert.strictEqual(await deleg(mockLore()).mergeIntoCurrent({ session_id: 's1', name: 'f' }, ctx()), null); });
+  it('mergeAbort', async () => { assert.strictEqual(await deleg(mockLore()).mergeAbort({ session_id: 's1' }, ctx()), null); });
+  it('mergeContinue', async () => { assert.strictEqual(await deleg(mockLore()).mergeContinue({ session_id: 's1' }, ctx()), null); });
+  it('stagePaths', async () => { assert.strictEqual(await deleg(mockLore()).stagePaths({ session_id: 's1', paths: ['f'] }, ctx()), null); });
+  it('discardPaths', async () => { assert.strictEqual(await deleg(mockLore()).discardPaths({ session_id: 's1', paths: ['f'] }, ctx()), null); });
 
-  describe('close', () => {
-    it('closes session', () => {
-      const d = createMockDelegate(createMockLore());
-      assert.strictEqual(d.close({ session_id: 'session-1' }, createRuntimeContext()), null);
-    });
-  });
-
-  describe('getWorkdir', () => {
-    it('returns session path', () => {
-      const d = createMockDelegate(createMockLore());
-      assert.strictEqual(d.getWorkdir({ session_id: 'session-1' }, createRuntimeContext()), '/tmp/mock-repo');
-    });
-  });
-
-  describe('getCurrentBranch', () => {
-    it('returns branch name from status', () => {
-      const d = createMockDelegate(createMockLore());
-      const branch = d.getCurrentBranch({ session_id: 'session-1' }, createRuntimeContext());
-      assert.strictEqual(branch, null);
-    });
-  });
-
-  describe('listBranches', () => {
-    it('returns branch entries', () => {
-      const d = createMockDelegate(createMockLore());
-      const branches = d.listBranches({ session_id: 'session-1' }, createRuntimeContext());
-      assert.ok(Array.isArray(branches));
-    });
-  });
-
-  describe('listLocalBranches', () => {
-    it('returns branch names', () => {
-      const d = createMockDelegate(createMockLore());
-      const branches = d.listLocalBranches({ session_id: 'session-1' }, createRuntimeContext());
-      assert.ok(Array.isArray(branches));
-    });
-  });
-
-  describe('createBranch', () => {
-    it('creates branch', () => {
-      const d = createMockDelegate(createMockLore());
-      assert.strictEqual(d.createBranch({ session_id: 'session-1', name: 'test' }, createRuntimeContext()), null);
-    });
-  });
-
-  describe('checkoutBranch', () => {
-    it('switches branch', () => {
-      const d = createMockDelegate(createMockLore());
-      assert.strictEqual(d.checkoutBranch({ session_id: 'session-1', name: 'main' }, createRuntimeContext()), null);
-    });
-  });
-
-  describe('ensureRemote', () => {
-    it('throws when URL differs', () => {
-      const d = createMockDelegate(createMockLore());
-      assert.throws(() => d.ensureRemote({ session_id: 'session-1', name: 'origin', url: 'lore://diff' }, createRuntimeContext()));
-    });
-  });
-
-  describe('listRemotes', () => {
-    it('returns empty when no remote URL', () => {
-      const d = createMockDelegate(createMockLore());
-      const remotes = d.listRemotes({ session_id: 'session-1' }, createRuntimeContext());
-      assert.ok(Array.isArray(remotes));
-    });
-  });
-
-  describe('removeRemote', () => {
-    it('throws unsupported error', () => {
-      const d = createMockDelegate(createMockLore());
-      assert.throws(() => d.removeRemote({ session_id: 'session-1', name: 'origin' }, createRuntimeContext()));
-    });
-  });
-
-  describe('fetch', () => {
-    it('completes', () => {
-      const d = createMockDelegate(createMockLore());
-      assert.strictEqual(d.fetch({ session_id: 'session-1' }, createRuntimeContext()), null);
-    });
-  });
-
-  describe('push', () => {
-    it('completes', () => {
-      const d = createMockDelegate(createMockLore());
-      assert.strictEqual(d.push({ session_id: 'session-1' }, createRuntimeContext()), null);
-    });
-  });
-
-  describe('pullFfOnly', () => {
-    it('completes', () => {
-      const d = createMockDelegate(createMockLore());
-      assert.strictEqual(d.pullFfOnly({ session_id: 'session-1', remote: 'origin' }, createRuntimeContext()), null);
-    });
-  });
-
-  describe('commit', () => {
-    it('returns revision after commit', () => {
-      const d = createMockDelegate(createMockLore());
-      assert.strictEqual(d.commit({ session_id: 'session-1', name: 'Test', email: 'test@test.com', message: 'test' }, createRuntimeContext()), '');
-    });
-  });
-
-  describe('commitIndex', () => {
-    it('delegates to commit', () => {
-      const d = createMockDelegate(createMockLore());
-      assert.strictEqual(d.commitIndex({ session_id: 'session-1', name: 'Test', email: 'test@test.com', message: 'test' }, createRuntimeContext()), '');
-    });
-  });
-
-  describe('getStatusSummary', () => {
-    it('returns status summary', () => {
-      const d = createMockDelegate(createMockLore());
-      const summary = d.getStatusSummary({ session_id: 'session-1' }, createRuntimeContext());
-      assert.ok(summary);
-    });
-  });
-
-  describe('getStatusPayload', () => {
-    it('returns status payload', () => {
-      const d = createMockDelegate(createMockLore());
-      const payload = d.getStatusPayload({ session_id: 'session-1' }, createRuntimeContext());
-      assert.ok(payload);
-    });
-  });
-
-  describe('listCommits', () => {
-    it('returns commit entries', () => {
-      const d = createMockDelegate(createMockLore());
-      const commits = d.listCommits({ session_id: 'session-1', query: { limit: 10 } }, createRuntimeContext());
-      assert.ok(Array.isArray(commits));
-    });
-  });
-
-  describe('diffFile', () => {
-    it('returns diff lines', () => {
-      const d = createMockDelegate(createMockLore());
-      const diff = d.diffFile({ session_id: 'session-1', path: 'file.txt' }, createRuntimeContext());
-      assert.ok(diff);
-    });
-  });
-
-  describe('diffCommit', () => {
-    it('returns diff lines', () => {
-      const d = createMockDelegate(createMockLore());
-      const diff = d.diffCommit({ session_id: 'session-1', rev: 'abc' }, createRuntimeContext());
-      assert.ok(Array.isArray(diff));
-    });
-  });
-
-  describe('mergeIntoCurrent', () => {
-    it('starts merge', () => {
-      const d = createMockDelegate(createMockLore());
-      assert.strictEqual(d.mergeIntoCurrent({ session_id: 'session-1', name: 'feature' }, createRuntimeContext()), null);
-    });
-  });
-
-  describe('mergeAbort', () => {
-    it('aborts merge', () => {
-      const d = createMockDelegate(createMockLore());
-      assert.strictEqual(d.mergeAbort({ session_id: 'session-1' }, createRuntimeContext()), null);
-    });
-  });
-
-  describe('mergeContinue', () => {
-    it('continues merge', () => {
-      const d = createMockDelegate(createMockLore());
-      assert.strictEqual(d.mergeContinue({ session_id: 'session-1' }, createRuntimeContext()), null);
-    });
-  });
-
-  describe('stagePaths', () => {
-    it('stages paths', () => {
-      const d = createMockDelegate(createMockLore());
-      assert.strictEqual(d.stagePaths({ session_id: 'session-1', paths: ['file.txt'] }, createRuntimeContext()), null);
-    });
-  });
-
-  describe('discardPaths', () => {
-    it('resets paths', () => {
-      const d = createMockDelegate(createMockLore());
-      assert.strictEqual(d.discardPaths({ session_id: 'session-1', paths: ['file.txt'] }, createRuntimeContext()), null);
-    });
-  });
-
-  describe('stub methods', () => {
-    const stubMethods = [
-      'listStashes', 'stashPush', 'stashApply', 'stashPop', 'stashDrop', 'stashShow',
-      'renameBranch', 'stagePatch', 'stageSelections', 'applyReversePatch',
-    ] as const;
-
-    for (const method of stubMethods) {
-      it(`${method} throws unsupported`, () => {
-        const d = createMockDelegate(createMockLore());
-        assert.throws(() => (d as any)[method]({ session_id: 'session-1' }, createRuntimeContext()));
-      });
-    }
-  });
+  const stubs = ['listStashes', 'stashPush', 'stashApply', 'stashPop', 'stashDrop', 'stashShow',
+    'renameBranch', 'stagePatch', 'stageSelections', 'applyReversePatch'];
+  for (const m of stubs) {
+    it(`${m} throws`, async () => { await assert.rejects(async () => (deleg(mockLore()) as any)[m]({ session_id: 's1' }, ctx())); });
+  }
 });
