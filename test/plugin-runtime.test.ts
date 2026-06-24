@@ -105,7 +105,7 @@ describe('plugin runtime session management', () => {
     allocateSession({ path: '/my-repo' });
     const cmd = requireLoreCommand('1');
     assert.ok(cmd);
-    assert.ok(typeof cmd.run === 'function');
+    assert.ok(typeof cmd.status === 'function');
   });
 });
 
