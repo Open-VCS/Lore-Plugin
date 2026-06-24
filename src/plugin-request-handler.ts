@@ -7,6 +7,7 @@ import {
   type PluginRuntimeContext,
 } from '@openvcs/sdk/runtime';
 import type * as OpenVcs from '@openvcs/sdk/types';
+import { LoreEventTag } from '@lore-vcs/sdk/types/enums';
 
 import {
   asNumber,
@@ -19,7 +20,7 @@ import {
   parseStatusFromEvents,
 } from './plugin-helpers.js';
 import { LoreCommand } from './lore.js';
-import type { LoreSession } from './plugin-types.js';
+import type { LoreSession, LoreJsonEvent } from './plugin-types.js';
 
 // ---------------------------------------------------------------------------
 // Runtime dependencies
@@ -50,6 +51,24 @@ function asOptionalBoolean(value: unknown): boolean | undefined {
 function splitDiffLines(output: string): string[] {
   const normalized = output.trimEnd();
   return normalized.length > 0 ? normalized.split('\n') : [];
+}
+
+/** Converts a SNAKE_CASE LoreEventTag enum name to camelCase. */
+function sdkTagToLegacyName(tag: LoreEventTag): string {
+  const name = LoreEventTag[tag];
+  if (!name) return String(tag);
+  const parts = name.toLowerCase().split('_');
+  return parts[0] + parts.slice(1).map((p) => p.charAt(0).toUpperCase() + p.slice(1)).join('');
+}
+
+/** Converts SDK LoreEventFFI[] to the legacy LoreJsonEvent[] format for parsing helpers. */
+function toLegacyEvents(events: Array<{ tag: LoreEventTag; data?: unknown }>): LoreJsonEvent[] {
+  return events.map((e) => ({
+    tagName: sdkTagToLegacyName(e.tag),
+    data: (e.data != null && typeof e.data === 'object')
+      ? e.data as Record<string, unknown>
+      : undefined,
+  }));
 }
 
 // ---------------------------------------------------------------------------
@@ -91,18 +110,22 @@ export class LoreVcsDelegates extends VcsDelegateBase<LoreRuntimeDependencies> {
   // Open / Close / Clone
   // -------------------------------------------------------------------------
 
-  override open(
+  override async open(
     params: OpenVcs.VcsOpenParams,
     _context: PluginRuntimeContext,
-  ): OpenVcs.VcsSessionResult {
+  ): Promise<OpenVcs.VcsSessionResult> {
     const repoPath = asTrimmedString(params.path);
     if (!repoPath) {
       throw pluginError('vcs-open-invalid-path', 'path is required');
     }
 
-    // Verify .lore/ directory exists
+    // Verify the repository is accessible
     const lore = this.deps.createLoreCommand(repoPath);
-    lore.runChecked(['status', '--revision-only'], 'vcs-open-not-repository');
+    try {
+      await lore.status([], false);
+    } catch {
+      throw pluginError('vcs-open-not-repository', 'Not a Lore repository');
+    }
 
     const sessionId = this.deps.allocateSession({ path: repoPath });
     return { session_id: sessionId };
@@ -116,10 +139,10 @@ export class LoreVcsDelegates extends VcsDelegateBase<LoreRuntimeDependencies> {
     return null;
   }
 
-  override cloneRepo(
+  override async cloneRepo(
     params: OpenVcs.VcsCloneRepoParams,
-    context: PluginRuntimeContext,
-  ): null {
+    _context: PluginRuntimeContext,
+  ): Promise<null> {
     const url = asTrimmedString(params.url);
     const destination = asTrimmedString(params.dest);
 
@@ -128,18 +151,7 @@ export class LoreVcsDelegates extends VcsDelegateBase<LoreRuntimeDependencies> {
     }
 
     const lore = this.deps.createLoreCommand(process.cwd());
-    const output = lore.runChecked(
-      ['clone', url, destination],
-      'vcs-clone-failed',
-    );
-    const lines = `${output.stdout}\n${output.stderr}`
-      .split(/\r?\n/g)
-      .map((line) => line.trim())
-      .filter(Boolean);
-
-    for (const line of lines) {
-      context.host.info(line);
-    }
+    await lore.clone(url, destination);
 
     return null;
   }
@@ -155,17 +167,18 @@ export class LoreVcsDelegates extends VcsDelegateBase<LoreRuntimeDependencies> {
     return this.requireSessionPath(params.session_id);
   }
 
-  override getCurrentBranch(
+  override async getCurrentBranch(
     params: OpenVcs.VcsSessionParams,
     _context: PluginRuntimeContext,
-  ): string | null {
+  ): Promise<string | null> {
     const lore = this.requireLore(params.session_id);
-    const result = lore.status(undefined, false);
-    const revisionEvent = result.events.find(
-      (e) => e.tagName === 'repositoryStatusRevision',
+    const events = await lore.status(undefined, false);
+    const revisionEvent = events.find(
+      (e) => e.tag === LoreEventTag.REPOSITORY_STATUS_REVISION,
     );
     if (revisionEvent?.data) {
-      return asTrimmedString(revisionEvent.data.branchName) || null;
+      const data = revisionEvent.data as unknown as Record<string, unknown>;
+      return asTrimmedString(data.branchName) || null;
     }
     return null;
   }
@@ -174,13 +187,13 @@ export class LoreVcsDelegates extends VcsDelegateBase<LoreRuntimeDependencies> {
   // Branch listing / creation / checkout / deletion
   // -------------------------------------------------------------------------
 
-  override listBranches(
+  override async listBranches(
     params: OpenVcs.VcsSessionParams,
     _context: PluginRuntimeContext,
-  ): OpenVcs.VcsBranchEntry[] {
+  ): Promise<OpenVcs.VcsBranchEntry[]> {
     const lore = this.requireLore(params.session_id);
-    const result = lore.listBranches();
-    const { branches } = parseBranchList(result.events);
+    const events = await lore.listBranches();
+    const { branches } = parseBranchList(toLegacyEvents(events));
 
     return branches.map((b) => ({
       name: b.name,
@@ -190,35 +203,35 @@ export class LoreVcsDelegates extends VcsDelegateBase<LoreRuntimeDependencies> {
     }));
   }
 
-  override listLocalBranches(
+  override async listLocalBranches(
     params: OpenVcs.VcsSessionParams,
     _context: PluginRuntimeContext,
-  ): string[] {
+  ): Promise<string[]> {
     const lore = this.requireLore(params.session_id);
-    const result = lore.listBranches();
-    const { branches } = parseBranchList(result.events);
+    const events = await lore.listBranches();
+    const { branches } = parseBranchList(toLegacyEvents(events));
     return branches.map((b) => b.name);
   }
 
-  override createBranch(
+  override async createBranch(
     params: OpenVcs.VcsCreateBranchParams,
     _context: PluginRuntimeContext,
-  ): null {
+  ): Promise<null> {
     const lore = this.requireLore(params.session_id);
     const name = asTrimmedString(params.name);
-    lore.createBranch(name);
+    await lore.createBranch(name);
     if (params.checkout === true) {
-      lore.switchBranch(name);
+      await lore.switchBranch(name);
     }
     return null;
   }
 
-  override checkoutBranch(
+  override async checkoutBranch(
     params: OpenVcs.VcsCheckoutBranchParams,
     _context: PluginRuntimeContext,
-  ): null {
+  ): Promise<null> {
     const lore = this.requireLore(params.session_id);
-    lore.switchBranch(asTrimmedString(params.name));
+    await lore.switchBranch(asTrimmedString(params.name));
     return null;
   }
 
@@ -226,13 +239,13 @@ export class LoreVcsDelegates extends VcsDelegateBase<LoreRuntimeDependencies> {
   // Remote management (via config, not lore link)
   // -------------------------------------------------------------------------
 
-  override ensureRemote(
+  override async ensureRemote(
     params: OpenVcs.VcsEnsureRemoteParams,
     _context: PluginRuntimeContext,
-  ): null {
+  ): Promise<null> {
     const url = asTrimmedString(params.url);
     const lore = this.requireLore(params.session_id);
-    const currentUrl = lore.getRemoteUrl();
+    const currentUrl = await lore.getRemoteUrl();
     if (currentUrl === url) {
       return null;
     }
@@ -242,12 +255,12 @@ export class LoreVcsDelegates extends VcsDelegateBase<LoreRuntimeDependencies> {
     );
   }
 
-  override listRemotes(
+  override async listRemotes(
     params: OpenVcs.VcsSessionParams,
     _context: PluginRuntimeContext,
-  ): OpenVcs.VcsRemoteEntry[] {
+  ): Promise<OpenVcs.VcsRemoteEntry[]> {
     const lore = this.requireLore(params.session_id);
-    const url = lore.getRemoteUrl();
+    const url = await lore.getRemoteUrl();
     if (url) {
       return [{ name: 'origin', url }];
     }
@@ -268,32 +281,32 @@ export class LoreVcsDelegates extends VcsDelegateBase<LoreRuntimeDependencies> {
   // Fetch / Push / Pull
   // -------------------------------------------------------------------------
 
-  override fetch(
+  override async fetch(
     params: OpenVcs.VcsFetchParams,
     _context: PluginRuntimeContext,
-  ): null {
+  ): Promise<null> {
     const lore = this.requireLore(params.session_id);
-    lore.sync();
+    await lore.sync();
     return null;
   }
 
-  override push(
+  override async push(
     params: OpenVcs.VcsPushParams,
     _context: PluginRuntimeContext,
-  ): null {
+  ): Promise<null> {
     const lore = this.requireLore(params.session_id);
     const branch = asTrimmedString(params.refspec) || undefined;
-    lore.push(branch);
+    await lore.push(branch);
     return null;
   }
 
-  override pullFfOnly(
+  override async pullFfOnly(
     params: OpenVcs.VcsPullFfOnlyParams,
     _context: PluginRuntimeContext,
-  ): null {
+  ): Promise<null> {
     const lore = this.requireLore(params.session_id);
     const revision = asTrimmedString(params.branch) || undefined;
-    lore.sync(revision);
+    await lore.sync(revision);
     return null;
   }
 
@@ -301,26 +314,29 @@ export class LoreVcsDelegates extends VcsDelegateBase<LoreRuntimeDependencies> {
   // Commit / Commit index
   // -------------------------------------------------------------------------
 
-  override commit(
+  override async commit(
     params: OpenVcs.VcsCommitParams,
     _context: PluginRuntimeContext,
-  ): string {
+  ): Promise<string> {
     const lore = this.requireLore(params.session_id);
     const message = asTrimmedString(params.message);
-    const identity = asTrimmedString(params.name) || undefined;
-    lore.commit(message, identity);
+    await lore.commit(message);
     // Return current HEAD after commit — use status to get revision
-    const status = lore.status(undefined, false);
-    const revEvent = status.events.find(
-      (e) => e.tagName === 'repositoryStatusRevision',
+    const events = await lore.status(undefined, false);
+    const revEvent = events.find(
+      (e) => e.tag === LoreEventTag.REPOSITORY_STATUS_REVISION,
     );
-    return asTrimmedString(revEvent?.data?.revision) || '';
+    if (revEvent?.data) {
+      const data = revEvent.data as unknown as Record<string, unknown>;
+      return asTrimmedString(data.revision) || '';
+    }
+    return '';
   }
 
-  override commitIndex(
+  override async commitIndex(
     params: OpenVcs.VcsCommitParams,
     _context: PluginRuntimeContext,
-  ): string {
+  ): Promise<string> {
     return this.commit(params, _context);
   }
 
@@ -328,23 +344,23 @@ export class LoreVcsDelegates extends VcsDelegateBase<LoreRuntimeDependencies> {
   // Status (with caching)
   // -------------------------------------------------------------------------
 
-  override getStatusSummary(
+  override async getStatusSummary(
     params: OpenVcs.VcsSessionParams,
     _context: PluginRuntimeContext,
-  ): OpenVcs.StatusSummary {
+  ): Promise<OpenVcs.StatusSummary> {
     const lore = this.requireLore(params.session_id);
-    const result = lore.status(undefined, false);
-    const parsed = parseStatusFromEvents(result.events);
+    const events = await lore.status(undefined, false);
+    const parsed = parseStatusFromEvents(toLegacyEvents(events));
     return parsed.summary;
   }
 
-  override getStatusPayload(
+  override async getStatusPayload(
     params: OpenVcs.VcsSessionParams,
     _context: PluginRuntimeContext,
-  ): OpenVcs.StatusPayload {
+  ): Promise<OpenVcs.StatusPayload> {
     const lore = this.requireLore(params.session_id);
-    const result = lore.status(undefined, false);
-    const parsed = parseStatusFromEvents(result.events);
+    const events = await lore.status(undefined, false);
+    const parsed = parseStatusFromEvents(toLegacyEvents(events));
     return parsed.payload;
   }
 
@@ -352,29 +368,29 @@ export class LoreVcsDelegates extends VcsDelegateBase<LoreRuntimeDependencies> {
   // Commit history / Diff
   // -------------------------------------------------------------------------
 
-  override listCommits(
+  override async listCommits(
     params: OpenVcs.VcsListCommitsParams,
     _context: PluginRuntimeContext,
-  ): OpenVcs.CommitEntry[] {
+  ): Promise<OpenVcs.CommitEntry[]> {
     const lore = this.requireLore(params.session_id);
     const query = asRecord(params.query);
     const limit = asNumber(query.limit, 0);
     const rev = asTrimmedString(query.rev) || undefined;
-    const result = lore.listCommits(limit || undefined, rev);
-    return parseCommitHistory(result.events);
+    const events = await lore.listCommits(limit || undefined, rev);
+    return parseCommitHistory(toLegacyEvents(events));
   }
 
-  override diffFile(
+  override async diffFile(
     params: OpenVcs.VcsDiffFileParams,
     _context: PluginRuntimeContext,
-  ): OpenVcs.VcsDiffFileResponse {
+  ): Promise<OpenVcs.VcsDiffFileResponse> {
     const lore = this.requireLore(params.session_id);
-    const result = lore.diffFile(asTrimmedString(params.path));
+    const events = await lore.diffFile(asTrimmedString(params.path));
     // Extract diff lines from diff events
     const diffLines: string[] = [];
-    for (const evt of result.events) {
-      if (evt.tagName === 'fileDiffData' && evt.data) {
-        const d = evt.data as Record<string, unknown>;
+    for (const evt of events) {
+      if (evt.tag === LoreEventTag.FILE_DIFF && evt.data) {
+        const d = evt.data as unknown as Record<string, unknown>;
         if (typeof d.line === 'string') {
           diffLines.push(d.line);
         }
@@ -383,16 +399,16 @@ export class LoreVcsDelegates extends VcsDelegateBase<LoreRuntimeDependencies> {
     return { lines: diffLines, binary: false };
   }
 
-  override diffCommit(
+  override async diffCommit(
     params: OpenVcs.VcsDiffCommitParams,
     _context: PluginRuntimeContext,
-  ): string[] {
+  ): Promise<string[]> {
     const lore = this.requireLore(params.session_id);
-    const result = lore.diffRevision(asTrimmedString(params.rev));
+    const events = await lore.diffRevision(asTrimmedString(params.rev));
     const diffLines: string[] = [];
-    for (const evt of result.events) {
-      if (evt.tagName === 'revisionDiffData' && evt.data) {
-        const d = evt.data as Record<string, unknown>;
+    for (const evt of events) {
+      if (evt.tag === LoreEventTag.REVISION_DIFF_FILE && evt.data) {
+        const d = evt.data as unknown as Record<string, unknown>;
         if (typeof d.line === 'string') {
           diffLines.push(d.line);
         }
@@ -419,10 +435,10 @@ export class LoreVcsDelegates extends VcsDelegateBase<LoreRuntimeDependencies> {
     };
   }
 
-  override checkoutConflictSide(
+  override async checkoutConflictSide(
     params: OpenVcs.VcsCheckoutConflictSideParams,
     _context: PluginRuntimeContext,
-  ): null {
+  ): Promise<null> {
     const lore = this.requireLore(params.session_id);
     const side = asTrimmedString(params.side);
     const path = asTrimmedString(params.path);
@@ -430,17 +446,17 @@ export class LoreVcsDelegates extends VcsDelegateBase<LoreRuntimeDependencies> {
       throw pluginError('vcs-invalid-side', 'side must be "ours" or "theirs"');
     }
     if (side === 'ours') {
-      lore.mergeResolveMine([path]);
+      await lore.mergeResolveMine([path]);
     } else {
-      lore.mergeResolveTheirs([path]);
+      await lore.mergeResolveTheirs([path]);
     }
     return null;
   }
 
-  override writeMergeResult(
+  override async writeMergeResult(
     params: OpenVcs.VcsWriteMergeResultParams,
     _context: PluginRuntimeContext,
-  ): null {
+  ): Promise<null> {
     const lore = this.requireLore(params.session_id);
     const path = asTrimmedString(params.path);
     const content = Buffer.from(asTrimmedString(params.content_b64), 'base64').toString('utf8');
@@ -449,7 +465,7 @@ export class LoreVcsDelegates extends VcsDelegateBase<LoreRuntimeDependencies> {
     const { join } = require('node:path') as typeof import('node:path');
     const fullPath = join(this.requireSessionPath(params.session_id), path);
     writeFileSync(fullPath, content, 'utf8');
-    lore.stage([path]);
+    await lore.stage([path]);
     return null;
   }
 
@@ -477,29 +493,29 @@ export class LoreVcsDelegates extends VcsDelegateBase<LoreRuntimeDependencies> {
     );
   }
 
-  override stagePaths(
+  override async stagePaths(
     params: OpenVcs.VcsStagePathsParams,
     _context: PluginRuntimeContext,
-  ): null {
+  ): Promise<null> {
     const lore = this.requireLore(params.session_id);
     const paths = asStringArray(params.paths);
     if (paths.length === 0) {
       return null;
     }
-    lore.stage(paths);
+    await lore.stage(paths);
     return null;
   }
 
-  override discardPaths(
+  override async discardPaths(
     params: OpenVcs.VcsDiscardPathsParams,
     _context: PluginRuntimeContext,
-  ): null {
+  ): Promise<null> {
     const lore = this.requireLore(params.session_id);
     const paths = asStringArray(params.paths);
     if (paths.length === 0) {
       return null;
     }
-    lore.fileReset(paths);
+    await lore.fileReset(paths);
     return null;
   }
 
@@ -517,12 +533,12 @@ export class LoreVcsDelegates extends VcsDelegateBase<LoreRuntimeDependencies> {
   // Branch management
   // -------------------------------------------------------------------------
 
-  override deleteBranch(
+  override async deleteBranch(
     params: OpenVcs.VcsDeleteBranchParams,
     _context: PluginRuntimeContext,
-  ): null {
+  ): Promise<null> {
     const lore = this.requireLore(params.session_id);
-    lore.deleteBranch(asTrimmedString(params.name));
+    await lore.deleteBranch(asTrimmedString(params.name));
     return null;
   }
 
@@ -540,43 +556,43 @@ export class LoreVcsDelegates extends VcsDelegateBase<LoreRuntimeDependencies> {
   // Merge
   // -------------------------------------------------------------------------
 
-  override mergeIntoCurrent(
+  override async mergeIntoCurrent(
     params: OpenVcs.VcsMergeIntoCurrentParams,
     _context: PluginRuntimeContext,
-  ): null {
+  ): Promise<null> {
     const lore = this.requireLore(params.session_id);
     const name = asTrimmedString(params.name);
     const message = asTrimmedString(params.message) || undefined;
-    lore.mergeStart(name, message);
+    await lore.mergeStart(name, message);
     return null;
   }
 
-  override mergeAbort(
+  override async mergeAbort(
     params: OpenVcs.VcsSessionParams,
     _context: PluginRuntimeContext,
-  ): null {
+  ): Promise<null> {
     const lore = this.requireLore(params.session_id);
-    lore.mergeAbort();
+    await lore.mergeAbort();
     return null;
   }
 
-  override mergeContinue(
+  override async mergeContinue(
     params: OpenVcs.VcsMergeContinueParams,
     _context: PluginRuntimeContext,
-  ): null {
+  ): Promise<null> {
     const lore = this.requireLore(params.session_id);
     // In Lore, merge resolve with empty paths finalizes the merge
-    lore.mergeResolve([]);
+    await lore.mergeResolve([]);
     return null;
   }
 
-  override isMergeInProgress(
+  override async isMergeInProgress(
     params: OpenVcs.VcsSessionParams,
     _context: PluginRuntimeContext,
-  ): boolean {
+  ): Promise<boolean> {
     const lore = this.requireLore(params.session_id);
-    const result = lore.status(undefined, false);
-    const parsed = parseStatusFromEvents(result.events);
+    const events = await lore.status(undefined, false);
+    const parsed = parseStatusFromEvents(toLegacyEvents(events));
     return parsed.summary.conflicted > 0;
   }
 
@@ -592,12 +608,12 @@ export class LoreVcsDelegates extends VcsDelegateBase<LoreRuntimeDependencies> {
     return null;
   }
 
-  override getBranchUpstream(
+  override async getBranchUpstream(
     params: OpenVcs.VcsGetBranchUpstreamParams,
     _context: PluginRuntimeContext,
-  ): string | null {
+  ): Promise<string | null> {
     const lore = this.requireLore(params.session_id);
-    const url = lore.getRemoteUrl();
+    const url = await lore.getRemoteUrl();
     return url || null;
   }
 
@@ -605,28 +621,27 @@ export class LoreVcsDelegates extends VcsDelegateBase<LoreRuntimeDependencies> {
   // Reset
   // -------------------------------------------------------------------------
 
-  override hardResetHead(
+  override async hardResetHead(
     params: OpenVcs.VcsHardResetHeadParams,
     _context: PluginRuntimeContext,
-  ): null {
+  ): Promise<null> {
     const lore = this.requireLore(params.session_id);
     const ref = asTrimmedString(params.ref);
     if (ref) {
-      lore.fileReset(['.'], true);
+      await lore.fileReset(['.'], true);
     } else {
-      lore.fileReset(['.'], true);
+      await lore.fileReset(['.'], true);
     }
     return null;
   }
 
-  override resetSoftTo(
+  override async resetSoftTo(
     params: OpenVcs.VcsResetSoftToParams,
     _context: PluginRuntimeContext,
-  ): null {
+  ): Promise<null> {
     const lore = this.requireLore(params.session_id);
     // Lore branch reset updates the local pointer
-    const args = ['--no-pager', '--non-interactive', 'branch', 'reset', asTrimmedString(params.rev)];
-    lore.runChecked(args, 'lore-branch-reset-failed');
+    await lore.branchReset(asTrimmedString(params.rev));
     return null;
   }
 
@@ -634,20 +649,20 @@ export class LoreVcsDelegates extends VcsDelegateBase<LoreRuntimeDependencies> {
   // Identity
   // -------------------------------------------------------------------------
 
-  override getIdentity(
+  override async getIdentity(
     params: OpenVcs.VcsSessionParams,
     _context: PluginRuntimeContext,
-  ): OpenVcs.VcsIdentity | null {
+  ): Promise<OpenVcs.VcsIdentity | null> {
     const lore = this.requireLore(params.session_id);
     return lore.getIdentity();
   }
 
-  override setIdentityLocal(
+  override async setIdentityLocal(
     params: OpenVcs.VcsSetIdentityLocalParams,
     _context: PluginRuntimeContext,
-  ): null {
+  ): Promise<null> {
     const lore = this.requireLore(params.session_id);
-    lore.setIdentityLocal(
+    await lore.setIdentityLocal(
       asTrimmedString(params.name),
       asTrimmedString(params.email),
     );
@@ -704,21 +719,21 @@ export class LoreVcsDelegates extends VcsDelegateBase<LoreRuntimeDependencies> {
   // Cherry-pick / Revert
   // -------------------------------------------------------------------------
 
-  override cherryPick(
+  override async cherryPick(
     params: OpenVcs.VcsCherryPickParams,
     _context: PluginRuntimeContext,
-  ): null {
+  ): Promise<null> {
     const lore = this.requireLore(params.session_id);
-    lore.cherryPick(asTrimmedString(params.commit));
+    await lore.cherryPick(asTrimmedString(params.commit));
     return null;
   }
 
-  override revertCommit(
+  override async revertCommit(
     params: OpenVcs.VcsRevertCommitParams,
     _context: PluginRuntimeContext,
-  ): null {
+  ): Promise<null> {
     const lore = this.requireLore(params.session_id);
-    lore.revertCommit(asTrimmedString(params.commit));
+    await lore.revertCommit(asTrimmedString(params.commit));
     return null;
   }
 }

@@ -46,9 +46,9 @@ export const PluginDefinition: PluginModuleDefinition = {
  * Runs before the runtime begins processing requests. Throws if Lore is not
  * installed or version is below 0.8.
  * @throws Error if Lore is not available or version is unsupported */
-export function OnPluginStart(): void {
+export async function OnPluginStart(): Promise<void> {
   const lore = new LoreCommand(process.cwd());
-  const versionStr = lore.version();
+  const versionStr = await lore.version();
 
   /* c8 ignore next 5 */
   const versionMatch = versionStr.match(/(\d+)\.(\d+)/);
