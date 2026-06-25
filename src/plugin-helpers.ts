@@ -120,17 +120,20 @@ export function findErrorEvents(events: LoreJsonEvent[]): string[] {
 // ---------------------------------------------------------------------------
 
 /** Maps a Lore file action string to a short status code for the host. */
-function mapActionToStatus(action: string, fileData: Record<string, unknown>): string {
+/** Maps LoreFileAction enum (numeric or string) to status code. */
+function mapActionToStatus(action: string | number, fileData: Record<string, unknown>): string {
+  // LoreFileAction enum: KEEP=0, ADD=1, DELETE=2, MOVE=3, COPY=4
   switch (action) {
-    case 'Add':
+    case 1: case 'Add': case 'ADD':
       return 'A';
-    case 'Delete':
+    case 2: case 'Delete': case 'DELETE':
       return 'D';
-    case 'Move':
+    case 3: case 'Move': case 'MOVE':
       return 'R';
-    case 'Copy':
+    case 4: case 'Copy': case 'COPY':
       return 'C';
-    case 'Modify':
+    case 0: case 'Keep': case 'KEEP':
+    case 'Modify': case 'MODIFY':
     default:
       return 'M';
   }
@@ -168,7 +171,7 @@ export function parseStatusFromEvents(events: LoreJsonEvent[]): StatusParseResul
     const path = asTrimmedString(d.path);
     if (!path) continue;
 
-    const action = asTrimmedString(d.action);
+    const action = d.action as string | number;
     const flagStaged = d.flagStaged === true || d.flagStaged === 1;
     const flagDirty = d.flagDirty === true || d.flagDirty === 1;
     const flagConflict = d.flagConflict === true || d.flagConflict === 1;
