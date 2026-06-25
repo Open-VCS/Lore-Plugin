@@ -185,10 +185,14 @@ export class LoreCommand {
     }
   }
 
-  /** Diff a file. */
+  /** Diff a file. Lore SDK fileDiff requires absolute paths. */
   async diffFile(path: string, rev?: string): Promise<LoreEventFFI[]> {
+    // Build absolute path — Lore SDK fileDiff ignores repositoryPath from globals
+    const absolutePath = path.startsWith('/')
+      ? path
+      : `${this.repositoryPath}/${path}`;
     const args: LoreFileDiffArgs = {
-      paths: [path],
+      paths: [absolutePath],
       sourceRevision: rev ?? '',
       targetRevision: '',
       diff3: false,
