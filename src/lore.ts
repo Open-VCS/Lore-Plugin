@@ -166,7 +166,7 @@ export class LoreCommand {
     await this.wait(lore.repositoryClone as any, args);
   }
 
-  /** List commit history. */
+  /** List commit history. Returns empty array for repos with no commits. */
   async listCommits(limit?: number, rev?: string): Promise<LoreEventFFI[]> {
     const args: LoreRevisionHistoryArgs = {
       length: limit ?? 0,
@@ -174,7 +174,15 @@ export class LoreCommand {
       branch: '',
       onlyBranch: false,
     };
-    return this.collect(lore.revisionHistory as any, args);
+    try {
+      return await this.collect(lore.revisionHistory as any, args);
+    } catch (err: any) {
+      // Empty repos have no HEAD — return empty list instead of crashing
+      if (err?.message?.includes('revision not found')) {
+        return [];
+      }
+      throw err;
+    }
   }
 
   /** Diff a file. */
