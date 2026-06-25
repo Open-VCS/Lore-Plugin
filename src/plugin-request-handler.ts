@@ -390,13 +390,14 @@ export class LoreVcsDelegates extends VcsDelegateBase<LoreRuntimeDependencies> {
   ): Promise<OpenVcs.VcsDiffFileResponse> {
     const lore = this.requireLore(params.session_id);
     const events = await lore.diffFile(asTrimmedString(params.path));
-    // Extract diff lines from diff events
+    // Extract diff lines from FILE_DIFF events — SDK returns 'patch' (unified diff string)
     const diffLines: string[] = [];
     for (const evt of events) {
       if (evt.tag === LoreEventTag.FILE_DIFF && evt.data) {
         const d = evt.data as unknown as Record<string, unknown>;
-        if (typeof d.line === 'string') {
-          diffLines.push(d.line);
+        const patch = d.patch;
+        if (typeof patch === 'string') {
+          diffLines.push(...patch.split('\n'));
         }
       }
     }
