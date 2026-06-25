@@ -43,29 +43,17 @@ export class LoreCommand {
     return { repositoryPath: this.repositoryPath };
   }
 
-  /** Builds global args with optional identity override for commit. */
-  private globalsWithIdentity(identity?: string): LoreGlobalArgs {
-    const g = this.globals();
-    if (identity) {
-      g.identity = identity;
-    }
-    return g;
-  }
-
   /** Runs an SDK method and collects all events. */
   private async collect<TArgs>(fn: (globals: LoreGlobalArgs, args: TArgs) => ReturnType<typeof lore.branchList>, args: TArgs): Promise<LoreEventFFI[]> {
     // collectAsync() returns LoreEvent[] which is structurally compatible at runtime
     return await fn(this.globals(), args as any).collectAsync() as unknown as LoreEventFFI[];
   }
-
-  /** Runs an SDK method and waits for completion. */
+  /** Runs an SDK method and waits for completion, capturing errors. */
   private async wait<TArgs>(fn: (globals: LoreGlobalArgs, args: TArgs) => ReturnType<typeof lore.branchList>, args: TArgs): Promise<void> {
-    await fn(this.globals(), args as any).waitAsync();
-  }
-
-  /** Runs an SDK method with identity in globals and waits for completion. */
-  private async waitWithIdentity<TArgs>(fn: (globals: LoreGlobalArgs, args: TArgs) => ReturnType<typeof lore.branchList>, args: TArgs, identity?: string): Promise<void> {
-    await fn(this.globalsWithIdentity(identity), args as any).waitAsync();
+    // Use collectAsync() instead of waitAsync() so ERROR events are captured
+    // and surfaced in LoreError. waitAsync() sets a noop callback, silently
+    // dropping errors and producing empty error messages.
+    await fn(this.globals(), args as any).collectAsync();
   }
 
   /** Returns the lore version string. */
@@ -98,10 +86,14 @@ export class LoreCommand {
     await this.wait(lore.fileUnstage as any, args);
   }
 
-  /** Commit staged changes. Identity format: "Name <email>" or empty. */
+  /** Commit staged changes using optional identity in global args. */
   async commit(message: string, identity?: string): Promise<void> {
     const args: LoreRevisionCommitArgs = { message };
-    await this.waitWithIdentity(lore.revisionCommit as any, args, identity);
+    const globals: LoreGlobalArgs = { repositoryPath: this.repositoryPath };
+    if (identity) {
+      globals.identity = identity;
+    }
+    await lore.revisionCommit(globals, args as any).collectAsync();
   }
 
   /** Amend commit message. */

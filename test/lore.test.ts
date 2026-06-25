@@ -4,7 +4,9 @@
 
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
+
 import { LoreCommand } from '../src/lore.js';
+import { lore } from '@lore-vcs/sdk';
 import type { LoreEventFFI } from '@lore-vcs/sdk/types/events';
 
 /** Helper: creates a LoreCommand with mocked collect/wait. */
@@ -68,21 +70,26 @@ describe('LoreCommand', () => {
   });
 
   describe('commit', () => {
-    it('calls revisionCommit via waitWithIdentity', async () => {
-      let called = false;
-      const cmd = new LoreCommand('/tmp/test-repo');
-      (cmd as any).waitWithIdentity = async () => { called = true; };
-      await cmd.commit('test message');
-      assert.ok(called);
-    });
-    it('passes identity to waitWithIdentity', async () => {
-      let capturedIdentity: string | undefined;
-      const cmd = new LoreCommand('/tmp/test-repo');
-      (cmd as any).waitWithIdentity = async (_fn: unknown, _args: unknown, identity?: string) => {
-        capturedIdentity = identity;
+    it('calls revisionCommit with identity via collectAsync', async () => {
+      let capturedGlobals: any = null;
+      let capturedArgs: any = null;
+      const mockCollectAsync = async () => {};
+      const mockRevisionCommit = (globals: any, args: any) => {
+        capturedGlobals = globals;
+        capturedArgs = args;
+        return { collectAsync: mockCollectAsync };
       };
-      await cmd.commit('msg', 'Alice <alice@example.com>');
-      assert.strictEqual(capturedIdentity, 'Alice <alice@example.com>');
+      const orig = (lore as any).revisionCommit;
+      (lore as any).revisionCommit = mockRevisionCommit;
+      try {
+        const cmd = new LoreCommand('/tmp/te st');
+        await cmd.commit('msg', 'Alice <alice@ex.com>');
+        assert.ok(capturedGlobals.repositoryPath === '/tmp/te st');
+        assert.ok(capturedGlobals.identity === 'Alice <alice@ex.com>');
+        assert.ok(capturedArgs.message === 'msg');
+      } finally {
+        (lore as any).revisionCommit = orig;
+      }
     });
   });
 
