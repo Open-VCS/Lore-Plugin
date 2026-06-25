@@ -45,13 +45,7 @@ export class LoreCommand {
 
   /** Runs an SDK method and collects all events. */
   private async collect<TArgs>(fn: (globals: LoreGlobalArgs, args: TArgs) => ReturnType<typeof lore.branchList>, args: TArgs): Promise<LoreEventFFI[]> {
-    const events: LoreEventFFI[] = [];
-    await fn(this.globals(), args as any)
-      .callback((event: LoreEventFFI) => {
-        events.push(event);
-      })
-      .collectAsync();
-    return events;
+    return await fn(this.globals(), args as any).collectAsync();
   }
 
   /** Runs an SDK method and waits for completion. */
