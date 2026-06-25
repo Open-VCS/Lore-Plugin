@@ -1,6 +1,10 @@
 // Copyright © 2025-2026 OpenVCS Contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+import { existsSync, statSync } from 'node:fs';
+import { join } from 'node:path';
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 import {
   VcsDelegateBase,
   pluginError,
@@ -735,5 +739,55 @@ export class LoreVcsDelegates extends VcsDelegateBase<LoreRuntimeDependencies> {
     const lore = this.requireLore(params.session_id);
     await lore.revertCommit(asTrimmedString(params.commit));
     return null;
+  }
+
+  override validateUrl(
+    params: OpenVcs.VcsValidateUrlParams,
+    _context: PluginRuntimeContext,
+  ): OpenVcs.VcsValidationResult {
+    const url = asTrimmedString(params.url);
+    if (!url) {
+      return { ok: false, reason: 'URL is required' };
+    }
+
+    // Check for Lore URL patterns (http/https pointing to Lore servers)
+    const isHttp = url.startsWith('http://') || url.startsWith('https://');
+
+    if (isHttp) {
+      return { ok: true };
+    }
+
+    return {
+      ok: false,
+      reason: 'Not a recognized Lore URL (http or https URL expected)',
+    };
+  }
+
+  override validatePath(
+    params: OpenVcs.VcsValidatePathParams,
+    _context: PluginRuntimeContext,
+  ): OpenVcs.VcsValidationResult {
+    const path = asTrimmedString(params.path);
+    if (!path) {
+      return { ok: false, reason: 'Path is required' };
+    }
+
+    // Check if path exists and contains .lore directory
+
+    if (!existsSync(path)) {
+      return { ok: false, reason: 'Path does not exist' };
+    }
+
+    const stat = statSync(path);
+    if (!stat.isDirectory()) {
+      return { ok: false, reason: 'Path is not a directory' };
+    }
+
+    const loreDir = join(path, '.lore');
+    if (!existsSync(loreDir)) {
+      return { ok: false, reason: 'Not a Lore repository (.lore directory not found)' };
+    }
+
+    return { ok: true };
   }
 }

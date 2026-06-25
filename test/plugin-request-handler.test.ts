@@ -73,4 +73,41 @@ describe('LoreVcsDelegates', () => {
   for (const m of stubs) {
     it(`${m} throws`, async () => { await assert.rejects(async () => (deleg(mockLore()) as any)[m]({ session_id: 's1' }, ctx())); });
   }
+  describe('validateUrl', () => {
+    it('accepts http URL', () => {
+      const result = deleg(mockLore()).validateUrl({ url: 'http://lore.example.com/repo' }, ctx());
+      assert.strictEqual(result.ok, true);
+    });
+
+    it('accepts https URL', () => {
+      const result = deleg(mockLore()).validateUrl({ url: 'https://lore.example.com/repo' }, ctx());
+      assert.strictEqual(result.ok, true);
+    });
+
+    it('rejects empty URL', () => {
+      const result = deleg(mockLore()).validateUrl({ url: '' }, ctx());
+      assert.strictEqual(result.ok, false);
+      assert.ok(result.reason);
+    });
+
+    it('rejects non-http URL', () => {
+      const result = deleg(mockLore()).validateUrl({ url: 'ssh://git@example.com/repo' }, ctx());
+      assert.strictEqual(result.ok, false);
+      assert.ok(result.reason);
+    });
+  });
+
+  describe('validatePath', () => {
+    it('rejects empty path', () => {
+      const result = deleg(mockLore()).validatePath({ path: '' }, ctx());
+      assert.strictEqual(result.ok, false);
+      assert.ok(result.reason);
+    });
+
+    it('rejects non-existent path', () => {
+      const result = deleg(mockLore()).validatePath({ path: '/nonexistent/path' }, ctx());
+      assert.strictEqual(result.ok, false);
+      assert.ok(result.reason);
+    });
+  });
 });
