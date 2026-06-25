@@ -669,14 +669,11 @@ export class LoreVcsDelegates extends VcsDelegateBase<LoreRuntimeDependencies> {
   }
 
   override async setIdentityLocal(
-    params: OpenVcs.VcsSetIdentityLocalParams,
+    _params: OpenVcs.VcsSetIdentityLocalParams,
     _context: PluginRuntimeContext,
   ): Promise<null> {
-    const lore = this.requireLore(params.session_id);
-    await lore.setIdentityLocal(
-      asTrimmedString(params.name),
-      asTrimmedString(params.email),
-    );
+    // Lore passes identity via global args per-commit, not stored config.
+    // No-op: don't reject settings save; identity flows through commit params.
     return null;
   }
 
