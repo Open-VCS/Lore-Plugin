@@ -259,22 +259,26 @@ export class LoreCommand {
 
   /** Read a config value from the repository config. */
   async getConfig(key: string): Promise<string | null> {
-    const args: LoreRepositoryConfigGetArgs = { key };
-    const events = await this.collect(lore.repositoryConfigGet as any, args);
-    for (const evt of events) {
-      if (evt.tag === LoreEventTag.METADATA) {
-        const data = evt.data as unknown as Record<string, unknown> | undefined;
-        if (data?.key === key) {
-          const val = data.value;
-          if (typeof val === 'string') return val;
-          if (val && typeof val === 'object' && 'String' in val) return String((val as Record<string, unknown>).String);
-          if (val && typeof val === 'object' && 'Numeric' in val) return String((val as Record<string, unknown>).Numeric);
-          if (val && typeof val === 'object' && 'Hash' in val) return String((val as Record<string, unknown>).Hash);
-          return String(val);
+    try {
+      const args: LoreRepositoryConfigGetArgs = { key };
+      const events = await this.collect(lore.repositoryConfigGet as any, args);
+      for (const evt of events) {
+        if (evt.tag === LoreEventTag.METADATA) {
+          const data = evt.data as unknown as Record<string, unknown> | undefined;
+          if (data?.key === key) {
+            const val = data.value;
+            if (typeof val === 'string') return val;
+            if (val && typeof val === 'object' && 'String' in val) return String((val as Record<string, unknown>).String);
+            if (val && typeof val === 'object' && 'Numeric' in val) return String((val as Record<string, unknown>).Numeric);
+            if (val && typeof val === 'object' && 'Hash' in val) return String((val as Record<string, unknown>).Hash);
+            return String(val);
+          }
         }
       }
+      return null;
+    } catch {
+      return null;
     }
-    return null;
   }
 
   /** Read the remote URL from repository config. */
