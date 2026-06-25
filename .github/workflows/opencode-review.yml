@@ -1,0 +1,64 @@
+name: opencode-review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+jobs:
+  review:
+    if: github.event.pull_request.user.login == 'Jordonbc'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: primary
+        id: review_primary
+        continue-on-error: true
+        uses: anomalyco/opencode/github@2410593023d2c61f05123c9b0faf189a28dfbeee
+        env:
+          OPENCODE_API_KEY: ${{ secrets.ZEN_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OPENCODE_PERMISSION: '{"edit":"deny","write":"deny","patch":"deny"}'
+        with:
+          model: ${{ vars.OPENCODE_REVIEW_MODEL }}
+          variant: ${{ vars.OPENCODE_REVIEW_VARIANT }}
+          use_github_token: true
+          prompt: |
+            Before anything else, read and follow AGENTS.md for this repository and module.
+            You are reviewing this pull request only. Do not edit files, do not commit changes, and do not attempt to rewrite the PR.
+
+            Review this pull request:
+            - Check for code quality issues
+            - Look for potential bugs
+            - Suggest improvements
+            - Keep your output limited to review findings and comments.
+
+      - name: fallback
+        if: ${{ steps.review_primary.outcome == 'failure' }}
+        uses: anomalyco/opencode/github@2410593023d2c61f05123c9b0faf189a28dfbeee
+        env:
+          OPENCODE_API_KEY: ${{ secrets.ZEN_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OPENCODE_PERMISSION: '{"edit":"deny","write":"deny","patch":"deny"}'
+        with:
+          model: ${{ vars.OPENCODE_REVIEW_MODEL_FALLBACK }}
+          variant: ${{ vars.OPENCODE_REVIEW_VARIANT }}
+          use_github_token: true
+          prompt: |
+            Before anything else, read and follow AGENTS.md for this repository and module.
+            You are reviewing this pull request only. Do not edit files, do not commit changes, and do not attempt to rewrite the PR.
+
+            Review this pull request:
+            - Check for code quality issues
+            - Look for potential bugs
+            - Suggest improvements
+            - Keep your output limited to review findings and comments.
