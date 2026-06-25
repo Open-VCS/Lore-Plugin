@@ -1,6 +1,8 @@
 // Copyright © 2025-2026 OpenVCS Contributors
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+import { isAbsolute, resolve } from 'node:path';
+
 import { lore } from '@lore-vcs/sdk';
 import { LoreEventTag } from '@lore-vcs/sdk/types/enums';
 import type { LoreEventFFI } from '@lore-vcs/sdk/types/events';
@@ -43,17 +45,25 @@ export class LoreCommand {
     return { repositoryPath: this.repositoryPath };
   }
 
+  private absolutizeUserPath(path: string): string {
+    if (!path || path === '.') {
+      return this.repositoryPath;
+    }
+    return isAbsolute(path) ? path : resolve(this.repositoryPath, path);
+  }
+
+  private absolutizeUserPaths(paths: readonly string[]): string[] {
+    return paths.map((path) => this.absolutizeUserPath(path));
+  }
+
   /** Runs an SDK method and collects all events. */
   private async collect<TArgs>(fn: (globals: LoreGlobalArgs, args: TArgs) => ReturnType<typeof lore.branchList>, args: TArgs): Promise<LoreEventFFI[]> {
     // collectAsync() returns LoreEvent[] which is structurally compatible at runtime
     return await fn(this.globals(), args as any).collectAsync() as unknown as LoreEventFFI[];
   }
-  /** Runs an SDK method and waits for completion, capturing errors. */
+  /** Runs an SDK method and waits for completion. */
   private async wait<TArgs>(fn: (globals: LoreGlobalArgs, args: TArgs) => ReturnType<typeof lore.branchList>, args: TArgs): Promise<void> {
-    // Use collectAsync() instead of waitAsync() so ERROR events are captured
-    // and surfaced in LoreError. waitAsync() sets a noop callback, silently
-    // dropping errors and producing empty error messages.
-    await fn(this.globals(), args as any).collectAsync();
+    await fn(this.globals(), args as any).waitAsync();
   }
 
   /** Returns the lore version string. */
@@ -74,7 +84,7 @@ export class LoreCommand {
   /** Stage files. */
   async stage(paths: string[], scan?: boolean): Promise<void> {
     const args: LoreFileStageArgs = {
-      paths,
+      paths: this.absolutizeUserPaths(paths),
       scan: scan ?? false,
     };
     await this.wait(lore.fileStage as any, args);
@@ -82,11 +92,11 @@ export class LoreCommand {
 
   /** Unstage files. */
   async unstage(paths: string[]): Promise<void> {
-    const args: LoreFileUnstageArgs = { paths };
+    const args: LoreFileUnstageArgs = { paths: this.absolutizeUserPaths(paths) };
     await this.wait(lore.fileUnstage as any, args);
   }
 
-  /** Commit staged changes using optional identity in global args. */
+  /** Commit staged changes with optional identity in globals. */
   async commit(message: string, identity?: string): Promise<void> {
     const args: LoreRevisionCommitArgs = { message };
     const globals: LoreGlobalArgs = { repositoryPath: this.repositoryPath };
@@ -237,26 +247,26 @@ export class LoreCommand {
 
   /** Resolve merge conflicts. */
   async mergeResolve(paths: string[]): Promise<void> {
-    const args: LoreBranchMergeResolveArgs = { paths };
+    const args: LoreBranchMergeResolveArgs = { paths: this.absolutizeUserPaths(paths) };
     await this.wait(lore.branchMergeResolve as any, args);
   }
 
   /** Resolve merge conflicts with "mine" version. */
   async mergeResolveMine(paths: string[]): Promise<void> {
-    const args: LoreBranchMergeResolveMineArgs = { paths };
+    const args: LoreBranchMergeResolveMineArgs = { paths: this.absolutizeUserPaths(paths) };
     await this.wait(lore.branchMergeResolveMine as any, args);
   }
 
   /** Resolve merge conflicts with "theirs" version. */
   async mergeResolveTheirs(paths: string[]): Promise<void> {
-    const args: LoreBranchMergeResolveTheirsArgs = { paths };
+    const args: LoreBranchMergeResolveTheirsArgs = { paths: this.absolutizeUserPaths(paths) };
     await this.wait(lore.branchMergeResolveTheirs as any, args);
   }
 
   /** Reset files to revision. */
   async fileReset(paths: string[], purge?: boolean): Promise<void> {
     const args: LoreFileResetArgs = {
-      paths,
+      paths: this.absolutizeUserPaths(paths),
       purge: purge ?? false,
       revision: '',
     };

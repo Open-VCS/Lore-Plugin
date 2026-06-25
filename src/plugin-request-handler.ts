@@ -508,7 +508,7 @@ export class LoreVcsDelegates extends VcsDelegateBase<LoreRuntimeDependencies> {
     if (paths.length === 0) {
       return null;
     }
-    await lore.stage(paths);
+    await lore.stage(paths, true);
     return null;
   }
 
@@ -521,7 +521,7 @@ export class LoreVcsDelegates extends VcsDelegateBase<LoreRuntimeDependencies> {
     if (paths.length === 0) {
       return null;
     }
-    await lore.stage(paths);
+    await lore.stage(paths, true);
     return null;
   }
 

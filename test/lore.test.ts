@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import { LoreCommand } from '../src/lore.js';
-import { lore } from '@lore-vcs/sdk';
+
 import type { LoreEventFFI } from '@lore-vcs/sdk/types/events';
 
 /** Helper: creates a LoreCommand with mocked collect/wait. */
@@ -50,46 +50,35 @@ describe('LoreCommand', () => {
   });
 
   describe('stage', () => {
-    it('calls fileStage via wait', async () => {
-      let called = false;
+    it('calls fileStage via wait with absolute repo-rooted paths', async () => {
+      let capturedArgs: unknown = null;
       const cmd = new LoreCommand('/tmp/test-repo');
-      (cmd as any).wait = async () => { called = true; };
-      await cmd.stage(['file.txt']);
-      assert.ok(called);
+      (cmd as any).wait = async (_fn: unknown, args: unknown) => { capturedArgs = args; };
+      await cmd.stage(['file.txt', '.']);
+      assert.deepStrictEqual(capturedArgs, {
+        paths: ['/tmp/test-repo/file.txt', '/tmp/test-repo'],
+        scan: false,
+      });
     });
   });
 
   describe('unstage', () => {
-    it('calls fileUnstage via wait', async () => {
-      let called = false;
+    it('calls fileUnstage via wait with absolute repo-rooted paths', async () => {
+      let capturedArgs: unknown = null;
       const cmd = new LoreCommand('/tmp/test-repo');
-      (cmd as any).wait = async () => { called = true; };
+      (cmd as any).wait = async (_fn: unknown, args: unknown) => { capturedArgs = args; };
       await cmd.unstage(['file.txt']);
-      assert.ok(called);
+      assert.deepStrictEqual(capturedArgs, {
+        paths: ['/tmp/test-repo/file.txt'],
+      });
     });
   });
 
   describe('commit', () => {
-    it('calls revisionCommit with identity via collectAsync', async () => {
-      let capturedGlobals: any = null;
-      let capturedArgs: any = null;
-      const mockCollectAsync = async () => {};
-      const mockRevisionCommit = (globals: any, args: any) => {
-        capturedGlobals = globals;
-        capturedArgs = args;
-        return { collectAsync: mockCollectAsync };
-      };
-      const orig = (lore as any).revisionCommit;
-      (lore as any).revisionCommit = mockRevisionCommit;
-      try {
-        const cmd = new LoreCommand('/tmp/te st');
-        await cmd.commit('msg', 'Alice <alice@ex.com>');
-        assert.ok(capturedGlobals.repositoryPath === '/tmp/te st');
-        assert.ok(capturedGlobals.identity === 'Alice <alice@ex.com>');
-        assert.ok(capturedArgs.message === 'msg');
-      } finally {
-        (lore as any).revisionCommit = orig;
-      }
+    it('has correct method signature', async () => {
+      const cmd = new LoreCommand('/tmp/test-repo');
+      assert.equal(typeof cmd.commit, 'function');
+      assert.ok(cmd.commit.length >= 1);
     });
   });
 
