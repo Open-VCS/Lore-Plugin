@@ -22,6 +22,8 @@ export type {
 export interface LoreSession {
   /** Stores the absolute repository path for the session. */
   path: string;
+  /** Per-session commit identity set via repo settings. */
+  identity?: { name: string; email: string };
 }
 
 /** Describes the captured result of one lore subprocess. */

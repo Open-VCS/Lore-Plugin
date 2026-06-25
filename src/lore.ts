@@ -43,6 +43,15 @@ export class LoreCommand {
     return { repositoryPath: this.repositoryPath };
   }
 
+  /** Builds global args with optional identity override for commit. */
+  private globalsWithIdentity(identity?: string): LoreGlobalArgs {
+    const g = this.globals();
+    if (identity) {
+      g.identity = identity;
+    }
+    return g;
+  }
+
   /** Runs an SDK method and collects all events. */
   private async collect<TArgs>(fn: (globals: LoreGlobalArgs, args: TArgs) => ReturnType<typeof lore.branchList>, args: TArgs): Promise<LoreEventFFI[]> {
     // collectAsync() returns LoreEvent[] which is structurally compatible at runtime
@@ -52,6 +61,11 @@ export class LoreCommand {
   /** Runs an SDK method and waits for completion. */
   private async wait<TArgs>(fn: (globals: LoreGlobalArgs, args: TArgs) => ReturnType<typeof lore.branchList>, args: TArgs): Promise<void> {
     await fn(this.globals(), args as any).waitAsync();
+  }
+
+  /** Runs an SDK method with identity in globals and waits for completion. */
+  private async waitWithIdentity<TArgs>(fn: (globals: LoreGlobalArgs, args: TArgs) => ReturnType<typeof lore.branchList>, args: TArgs, identity?: string): Promise<void> {
+    await fn(this.globalsWithIdentity(identity), args as any).waitAsync();
   }
 
   /** Returns the lore version string. */
@@ -84,10 +98,10 @@ export class LoreCommand {
     await this.wait(lore.fileUnstage as any, args);
   }
 
-  /** Commit staged changes. */
-  async commit(message: string): Promise<void> {
+  /** Commit staged changes. Identity format: "Name <email>" or empty. */
+  async commit(message: string, identity?: string): Promise<void> {
     const args: LoreRevisionCommitArgs = { message };
-    await this.wait(lore.revisionCommit as any, args);
+    await this.waitWithIdentity(lore.revisionCommit as any, args, identity);
   }
 
   /** Amend commit message. */

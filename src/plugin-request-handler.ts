@@ -86,6 +86,11 @@ export class LoreVcsDelegates extends VcsDelegateBase<LoreRuntimeDependencies> {
     return this.deps.requireSession(sessionId).path;
   }
 
+  /** Returns the full session object for a session id. */
+  protected requireSession(sessionId: unknown): LoreSession {
+    return this.deps.requireSession(sessionId);
+  }
+
   /** Returns a Lore command helper bound to a required session. */
   protected requireLore(sessionId: unknown): LoreCommand {
     const cwd = this.requireSessionPath(sessionId);
@@ -324,7 +329,10 @@ export class LoreVcsDelegates extends VcsDelegateBase<LoreRuntimeDependencies> {
   ): Promise<string> {
     const lore = this.requireLore(params.session_id);
     const message = asTrimmedString(params.message);
-    await lore.commit(message);
+    const name = asTrimmedString(params.name);
+    const email = asTrimmedString(params.email);
+    const identity = name && email ? `${name} <${email}>` : undefined;
+    await lore.commit(message, identity);
     // Return current HEAD after commit — use status to get revision
     const events = await lore.status(undefined, false);
     const revEvent = events.find(
@@ -664,16 +672,28 @@ export class LoreVcsDelegates extends VcsDelegateBase<LoreRuntimeDependencies> {
     params: OpenVcs.VcsSessionParams,
     _context: PluginRuntimeContext,
   ): Promise<OpenVcs.VcsIdentity | null> {
+    // Check per-session stored identity first (set via repo settings UI)
+    const session = this.requireSession(params.session_id);
+    if (session.identity) {
+      return session.identity;
+    }
+    // Fall back to Lore repository config
     const lore = this.requireLore(params.session_id);
     return lore.getIdentity();
   }
 
   override async setIdentityLocal(
-    _params: OpenVcs.VcsSetIdentityLocalParams,
+    params: OpenVcs.VcsSetIdentityLocalParams,
     _context: PluginRuntimeContext,
   ): Promise<null> {
-    // Lore passes identity via global args per-commit, not stored config.
-    // No-op: don't reject settings save; identity flows through commit params.
+    // Lore v1 SDK cannot write config; store identity in session instead.
+    // During commit, this identity is passed via Lore global args.
+    const session = this.requireSession(params.session_id);
+    const name = asTrimmedString(params.name);
+    const email = asTrimmedString(params.email);
+    if (name && email) {
+      session.identity = { name, email };
+    }
     return null;
   }
 

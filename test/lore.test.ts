@@ -68,12 +68,21 @@ describe('LoreCommand', () => {
   });
 
   describe('commit', () => {
-    it('calls revisionCommit via wait', async () => {
+    it('calls revisionCommit via waitWithIdentity', async () => {
       let called = false;
       const cmd = new LoreCommand('/tmp/test-repo');
-      (cmd as any).wait = async () => { called = true; };
+      (cmd as any).waitWithIdentity = async () => { called = true; };
       await cmd.commit('test message');
       assert.ok(called);
+    });
+    it('passes identity to waitWithIdentity', async () => {
+      let capturedIdentity: string | undefined;
+      const cmd = new LoreCommand('/tmp/test-repo');
+      (cmd as any).waitWithIdentity = async (_fn: unknown, _args: unknown, identity?: string) => {
+        capturedIdentity = identity;
+      };
+      await cmd.commit('msg', 'Alice <alice@example.com>');
+      assert.strictEqual(capturedIdentity, 'Alice <alice@example.com>');
     });
   });
 
