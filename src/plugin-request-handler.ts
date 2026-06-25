@@ -488,14 +488,20 @@ export class LoreVcsDelegates extends VcsDelegateBase<LoreRuntimeDependencies> {
     );
   }
 
-  override stageSelections(
-    _params: OpenVcs.VcsStageSelectionsParams,
+  /** Lore v1 does not support partial hunk staging.
+   *  Falls back to staging the entire file for each selection. */
+  override async stageSelections(
+    params: OpenVcs.VcsStageSelectionsParams,
     _context: PluginRuntimeContext,
-  ): null {
-    throw pluginError(
-      'lore-stage-patch-unsupported',
-      'Lore does not support patch staging in v1',
-    );
+  ): Promise<null> {
+    const lore = this.requireLore(params.session_id);
+    const selections = Array.isArray(params.selections) ? params.selections : [];
+    const paths = selections.map((s) => asTrimmedString(s.path)).filter(Boolean);
+    if (paths.length === 0) {
+      return null;
+    }
+    await lore.stage(paths);
+    return null;
   }
 
   override async stagePaths(

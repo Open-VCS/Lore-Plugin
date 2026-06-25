@@ -69,10 +69,18 @@ describe('LoreVcsDelegates', () => {
   it('discardPaths', async () => { assert.strictEqual(await deleg(mockLore()).discardPaths({ session_id: 's1', paths: ['f'] }, ctx()), null); });
 
   const stubs = ['listStashes', 'stashPush', 'stashApply', 'stashPop', 'stashDrop', 'stashShow',
-    'renameBranch', 'stagePatch', 'stageSelections', 'applyReversePatch'];
+    'renameBranch', 'stagePatch', 'applyReversePatch'];
   for (const m of stubs) {
     it(`${m} throws`, async () => { await assert.rejects(async () => (deleg(mockLore()) as any)[m]({ session_id: 's1' }, ctx())); });
   }
+  it('stageSelections falls back to staging whole files', async () => {
+    let stagedPaths: string[] = [];
+    const mock = mockLore();
+    mock.stage = async (paths: string[]) => { stagedPaths = paths; };
+    const d = deleg(mock);
+    await d.stageSelections({ session_id: 's1', selections: [{ path: 'a.txt', whole_hunks: [0], partial_hunks: {} }, { path: 'b.txt', whole_hunks: [], partial_hunks: { 0: [1, 2] } }] } as any, ctx());
+    assert.deepStrictEqual(stagedPaths, ['a.txt', 'b.txt']);
+  });
   describe('validateUrl', () => {
     it('accepts http URL', () => {
       const result = deleg(mockLore()).validateUrl({ url: 'http://lore.example.com/repo' }, ctx());
